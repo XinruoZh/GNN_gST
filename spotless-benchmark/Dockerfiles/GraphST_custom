@@ -1,0 +1,17 @@
+FROM python:3.8-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y build-essential
+
+# Install PyTorch (Adjust CUDA version as needed for your GPU)
+RUN pip install torch torchvision torchaudio
+
+# Install Torch Geometric (Required for GAT/SGC)
+RUN pip install torch-scatter torch-sparse torch-cluster torch-spline-conv torch-geometric
+
+# Install GraphST dependencies
+RUN pip install scanpy==1.9.1 anndata==0.8.0 pandas numpy scipy scikit-learn matplotlib
+
+# Add your modified GraphST code
+COPY ./GraphST /app/GraphST
+ENV PYTHONPATH="${PYTHONPATH}:/app"
