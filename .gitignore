@@ -3,3 +3,7 @@ log/
 output/
 GraphST/Data
 spotless-benchmark/standards
+spotless-benchmark/standards*.out
+*.zip
+spotless-benchmark/new_data.zip
+*.out
