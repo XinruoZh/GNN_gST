@@ -1,6 +1,7 @@
 nextflow.enable.dsl=2
 
 // Deconvolution methods
+include { runGraphST } from './GraphST/run_method.nf'
 include { runMusic } from './music/run_method.nf'
 include { runRCTD } from './rctd/run_method.nf'
 include { runSpotlight } from './spotlight/run_method.nf'
@@ -61,6 +62,12 @@ workflow runMethods {
             if ( methods =~ /spotlight/ ){
                 runSpotlight(pair_input_ch)
                 output_ch = output_ch.mix(runSpotlight.out)
+            }
+            
+            if ( methods =~ /graphst_custom/ ){
+                // Reuse the existing 'pair_input_ch' which already combines Spatial + SingleCell
+                runGraphST(pair_input_ch)
+                output_ch = output_ch.mix(runGraphST.out)
             }
 
             if ( methods =~ /spatialdwls/ ){
