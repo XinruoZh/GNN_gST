@@ -15,20 +15,20 @@ dependencies:
   - anndata=0.8.0
   - r-base=4.0.3
   - rpy2=3.4.1
-  
-  # Install POT via Conda
+
+  # Install POT via Conda to avoid compilation/numpy errors
   - pot>=0.8.0
   - scikit-misc=0.1.4
 
   - pip
   - pip:
-    # 1. PyTorch 2.0.1 (CUDA 11.7)
+    # 1. PyTorch 2.0.1 (Using CUDA 11.7 wheels)
     - --extra-index-url https://download.pytorch.org/whl/cu117
     - torch==2.0.1
     - torchvision==0.15.2
     - torchaudio==2.0.2
 
-    # 2. PyG Dependencies
+    # 2. PyG Dependencies (Pre-compiled for Torch 2.0.1 + CUDA 11.7)
     - --find-links https://data.pyg.org/whl/torch-2.0.1+cu117.html
     - torch-scatter
     - torch-sparse
@@ -36,5 +36,5 @@ dependencies:
     - torch-spline-conv
     - torch-geometric
 
-    # 3. Install the current GraphST package (This works now because we are in the right folder)
+    # 3. Install the current GraphST package
     - .

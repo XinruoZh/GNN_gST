@@ -1,0 +1,41 @@
+name: graphst_env
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.8
+  - numpy=1.22.3
+  - pandas=1.4.2
+  - scipy=1.8.1
+  - scikit-learn=1.1.1
+  - tqdm=4.64.0
+  - matplotlib=3.4.2
+  - scanpy=1.9.1
+  - anndata=0.8.0
+  - r-base=4.0.3       # Installs R interpreter
+  - rpy2=3.4.1
+  
+  # THE FIXES: Install these via Conda to avoid build errors
+  - pot>=0.8.0         # "pot" on conda-forge (not POT)
+  - scikit-misc=0.1.4  # "scikit-misc" on conda-forge
+
+  - pip
+  - pip:
+    # 1. PyTorch (CUDA 11.8) using extra-index-url so it keeps PyPI visible
+    - --extra-index-url https://download.pytorch.org/whl/cu118
+    - torch==2.0.1
+    - torchvision==0.15.2
+    - torchaudio==2.0.2
+
+    # 2. PyG Dependencies (Using find-links for the specific wheels)
+    - --find-links https://data.pyg.org/whl/torch-2.0.1+cu118.html
+    - torch-scatter
+    - torch-sparse
+    - torch-cluster
+    - torch-spline-conv
+    - torch-geometric
+
+    # 3. Install the current GraphST package (equivalent to 'pip install .')
+    - .

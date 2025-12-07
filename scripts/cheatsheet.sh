@@ -21,3 +21,4 @@ pairs=(
 
 
 sinfo -o "%20P %10G %5D %15F"
+squeue -u $USER --start
