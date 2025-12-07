@@ -68,7 +68,7 @@ nextflow run main.nf -resume \
     --annot celltype \
     --methods graphst_custom \
     --graphst_model_type GATv2 \
-    --epochs 20 \
+    --epochs 2 \
     --gpu \
     -with-report log/report_graphst_gatv2.html \
     -with-timeline log/timeline_graphst_gatv2.html \

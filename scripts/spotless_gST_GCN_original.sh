@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=run_gst_sgc
+#SBATCH --job-name=run_gst
 #SBATCH --partition=GPU-shared
 #SBATCH --gres=gpu:v100-32:1
 #SBATCH --time=0:10:00
 #SBATCH --account=cis250160p
 #SBATCH --mem=60G
 #SBATCH --chdir=/ocean/projects/cis250160p/xzhaoa/GNN_gST/spotless-benchmark
-#SBATCH --output=/ocean/projects/cis250160p/xzhaoa/GNN_gST/log/%x_%j_sgc.log
-#SBATCH --error=/ocean/projects/cis250160p/xzhaoa/GNN_gST/log/%x_%j_sgc.err
+#SBATCH --output=/ocean/projects/cis250160p/xzhaoa/GNN_gST/log/%x_%j.log
+#SBATCH --error=/ocean/projects/cis250160p/xzhaoa/GNN_gST/log/%x_%j.err
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=xinruoz@andrew.cmu.edu
 
@@ -54,7 +54,7 @@ STANDARDS="$ROOTDIR/standards"
 pair="gold_standard_1.rds gold_standard_1/*.rds"
 read -r r s <<< "$pair"
 
-echo ">>> Running GraphST (SGC) on $r with spatial $s"
+echo ">>> Running GraphST (GCN) on $r with spatial $s"
 
 # RUN COMMAND
 # -profile singularity: Matches your working script (avoids VSC cluster config issues in 'hpc' profile)
@@ -67,9 +67,9 @@ nextflow run main.nf -resume \
     --sp_input "$STANDARDS/$s" \
     --annot celltype \
     --methods graphst_custom \
-    --graphst_model_type SGC \
+    --graphst_model_type 10X \
     --epochs 2 \
     --gpu \
-    -with-report log/report_graphst_sgc.html \
-    -with-timeline log/timeline_graphst_sgc.html \
-    -with-trace log/trace_graphst_sgc.txt
+    -with-report log/report_graphst.html \
+    -with-timeline log/timeline_graphst.html \
+    -with-trace log/trace_graphst.txt

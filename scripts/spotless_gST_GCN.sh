@@ -6,59 +6,55 @@
 #SBATCH --account=cis250160p
 #SBATCH --mem=60G
 #SBATCH --chdir=/ocean/projects/cis250160p/xzhaoa/GNN_gST/spotless-benchmark
-#SBATCH --output=/ocean/projects/cis250160p/xzhaoa/GNN_gST/log/%x_%j.log
-#SBATCH --error=/ocean/projects/cis250160p/xzhaoa/GNN_gST/log/%x_%j.err
+#SBATCH --output=/ocean/projects/cis250160p/xzhaoa/GNN_gST/logs/%x_%j.log
+#SBATCH --error=/ocean/projects/cis250160p/xzhaoa/GNN_gST/logs/%x_%j.err
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=xinruoz@andrew.cmu.edu
 
 # ------------------------------------------------------------------
 # SETUP
 # ------------------------------------------------------------------
-cd /ocean/projects/cis250160p/xzhaoa/GNN_gST/spotless-benchmark
 module purge
-module load anaconda3/2024.10-1
-module load nextflow/21.10.6
+conda deactivate 2>/dev/null || true
+module load nextflow
 
-# Ensure Singularity is available (Bridges-2 default)
-if ! command -v singularity &> /dev/null; then
-    echo "WARNING: Singularity not found in path. Trying module load..."
-    module load singularity
+# If Singularity/Apptainer isn't on PATH, try loading it
+if ! command -v singularity &> /dev/null && ! command -v apptainer &> /dev/null; then
+    echo "WARNING: Singularity/Apptainer not found in PATH. Trying module load singularity..."
+    module load singularity 2>/dev/null || echo "Singularity module not found; relying on container support in profile."
 fi
 
-mkdir -p log
+mkdir -p logs
 
 # ------------------------------------------------------------------
 # CACHE CONFIGURATION
 # ------------------------------------------------------------------
-# Using the specific cache folder for this project
-export NXF_SINGULARITY_CACHEDIR="/ocean/projects/cis250160p/xzhaoa/GNN_gST/spotless-benchmark/.nf_singularity_cache"
-mkdir -p $NXF_SINGULARITY_CACHEDIR
+ROOTDIR="/ocean/projects/cis250160p/xzhaoa/GNN_gST/spotless-benchmark"
+cd /ocean/projects/cis250160p/xzhaoa/GNN_gST/spotless-benchmark
+# Nextflow Singularity cache (project-specific)
+export NXF_SINGULARITY_CACHEDIR="$ROOTDIR/.nf_singularity_cache"
+mkdir -p "$NXF_SINGULARITY_CACHEDIR"
 
-# Use Local NVMe for temporary build files (Faster performance)
-export APPTAINER_TMPDIR="$LOCAL/apptainer_tmp"
-export SINGULARITY_TMPDIR="$LOCAL/apptainer_tmp"
-export APPTAINER_CACHEDIR="$LOCAL/apptainer_cache"
-export SINGULARITY_CACHEDIR="$LOCAL/apptainer_cache"
+# Use node-local NVMe for Apptainer/Singularity temp + cache (if $LOCAL is defined)
+export APPTAINER_TMPDIR="${LOCAL:-/tmp}/apptainer_tmp"
+export SINGULARITY_TMPDIR="${LOCAL:-/tmp}/apptainer_tmp"
+export APPTAINER_CACHEDIR="${LOCAL:-/tmp}/apptainer_cache"
+export SINGULARITY_CACHEDIR="${LOCAL:-/tmp}/apptainer_cache"
 
-mkdir -p "$APPTAINER_TMPDIR"
-mkdir -p "$APPTAINER_CACHEDIR"
+mkdir -p "$APPTAINER_TMPDIR" "$APPTAINER_CACHEDIR"
 
 # ------------------------------------------------------------------
 # RUN PIPELINE
 # ------------------------------------------------------------------
-ROOTDIR="/ocean/projects/cis250160p/xzhaoa/GNN_gST/spotless-benchmark"
 REFERENCE="$ROOTDIR/standards/reference"
 STANDARDS="$ROOTDIR/standards"
 
-# Define the dataset pair
+# Define the dataset pair (reference + spatial glob)
 pair="gold_standard_1.rds gold_standard_1/*.rds"
 read -r r s <<< "$pair"
 
-echo ">>> Running GraphST (GCN) on $r with spatial $s"
+echo ">>> Running GraphST (GCN) on reference: $r with spatial files: $s"
 
-# RUN COMMAND
-# -profile singularity: Matches your working script (avoids VSC cluster config issues in 'hpc' profile)
-# --graphst_model_type 10X: Runs the standard GCN version
 nextflow run main.nf -resume \
     -profile singularity \
     --rootdir "$ROOTDIR" \
@@ -68,8 +64,8 @@ nextflow run main.nf -resume \
     --annot celltype \
     --methods graphst_custom \
     --graphst_model_type 10X \
-    --epochs 20 \
+    --epochs 2 \
     --gpu \
-    -with-report log/report_graphst.html \
-    -with-timeline log/timeline_graphst.html \
-    -with-trace log/trace_graphst.txt
+    -with-report   "logs/report_graphst.html" \
+    -with-timeline "logs/timeline_graphst.html" \
+    -with-trace    "logs/trace_graphst.txt"

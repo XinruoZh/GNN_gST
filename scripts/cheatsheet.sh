@@ -18,3 +18,6 @@ pairs=(
   "silver_standard_5_scc_p5.rds silver_standard_5-*/*.rds"
   "silver_standard_6_melanoma.rds silver_standard_6-*/*.rds"
 )
+
+
+sinfo -o "%20P %10G %5D %15F"
