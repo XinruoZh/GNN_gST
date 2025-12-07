@@ -176,12 +176,14 @@ profiles {
 
         singularity {
             enabled = true
+            cacheDir = "$VSC_SCRATCH_KYUKON_VO_USER/singularity"
         }
 
+        workDir = "$VSC_SCRATCH_KYUKON_VO_USER/work"
 
         // Script parameters
         params {
-            rootdir = "launchDir"
+            rootdir = "$VSC_DATA_VO_USER/spotless-benchmark"
             outdir = [props: "${params.rootdir}/deconv_proportions",
                       metrics: "${params.rootdir}/results",
                       synthspot: "${params.rootdir}/synthetic_data/"]
