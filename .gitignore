@@ -7,4 +7,8 @@ spotless-benchmark/standards*.out
 *.zip
 spotless-benchmark/new_data.zip
 *.out
+*.err
 spotless-benchmark/subworkflows/deconvolution/GraphST/graphst_env
+logs/
+spotless-benchmark/*result*
+spotless-benchmark/*work*
