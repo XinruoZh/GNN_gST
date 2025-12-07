@@ -2,9 +2,10 @@
 library(precrec)
 library(magrittr)
 library(philentropy)
+library(stringr)
 
-getConfusionMatrix <- function(known_props, test_props){
-  test_props <- round(test_props, 2)
+getConfusionMatrix <- function(known_props, test_props, threshold = 0.05){
+  test_props[test_props < threshold] <- 0
   tp <- 0; tn <- 0; fp <- 0; fn <- 0
   missing_rows <- which(rowSums(is.na(known_props)) > 0)
   
@@ -30,7 +31,7 @@ getConfusionMatrix <- function(known_props, test_props){
 
 par <- R.utils::commandArgs(trailingOnly=TRUE, asValues=TRUE)
 
-# Load reference data
+# --- 1. Load Reference Data ---
 ground_truth_data <- readRDS(par$sp_input)
 
 if (class(ground_truth_data) == "list"){ 
@@ -39,40 +40,97 @@ if (class(ground_truth_data) == "list"){
 }
 
 ncells <- sum(celltype_cols)
-# Remove all spaces and dots from cell names, sort them
 known_props <- ground_truth_data$relative_spot_composition[,celltype_cols]
+
+# Clean known_props names
 colnames(known_props) <- stringr::str_replace_all(colnames(known_props), "[/ .]", "")
-
-# Load deconvolution results
-deconv_matrix <- read.table(par$props_file, sep="\t", header=TRUE)
-
-# Match columns of known and deconv results
-columns_to_add <- colnames(deconv_matrix)[!colnames(deconv_matrix) %in% colnames(known_props)]
-known_props <- cbind(known_props,
-                     matrix(0, nrow=nrow(known_props), ncol=length(columns_to_add),
-                            dimnames = list(rownames(known_props), columns_to_add)))
 known_props <- known_props[,sort(colnames(known_props), method="shell")]
 
+# --- 2. Load Deconvolution Results ---
+# Check if file exists
+if (!file.exists(par$props_file)) {
+    stop(paste("Proportions file not found:", par$props_file))
+}
+
+deconv_matrix <- read.table(par$props_file, sep="\t", header=TRUE, check.names=FALSE)
+
+# --- FIX: Handle Row Names (Spot IDs) ---
+# If the first column is character/factor, assume it is the Spot ID index
+if (!is.numeric(deconv_matrix[,1])) {
+    # Check if these look like the spot IDs in known_props
+    # (Optional verify, but generally safe to assume first col is index if char)
+    rownames(deconv_matrix) <- deconv_matrix[,1]
+    deconv_matrix <- deconv_matrix[,-1]
+}
+
+# --- FIX: Clean and Sort Columns ---
+# Ensure column names are cleaned exactly like known_props to allow matching
+colnames(deconv_matrix) <- stringr::str_replace_all(colnames(deconv_matrix), "[/ .]", "")
+
+# Sort columns alphabetically
+deconv_matrix <- deconv_matrix[,sort(colnames(deconv_matrix), method="shell")]
+
+# Ensure numeric matrix
+deconv_matrix <- as.matrix(deconv_matrix)
+
+# --- 3. Align Columns ---
+# 1. Identify missing columns in Deconv (add as 0)
+missing_in_deconv <- setdiff(colnames(known_props), colnames(deconv_matrix))
+if (length(missing_in_deconv) > 0) {
+    zero_mat <- matrix(0, nrow=nrow(deconv_matrix), ncol=length(missing_in_deconv))
+    colnames(zero_mat) <- missing_in_deconv
+    deconv_matrix <- cbind(deconv_matrix, zero_mat)
+}
+
+# 2. Identify extra columns in Deconv (add to Known as 0 to avoid dimension mismatch)
+# (Ideally shouldn't happen if using same reference, but good for safety)
+missing_in_known <- setdiff(colnames(deconv_matrix), colnames(known_props))
+if (length(missing_in_known) > 0) {
+    zero_mat <- matrix(0, nrow=nrow(known_props), ncol=length(missing_in_known))
+    colnames(zero_mat) <- missing_in_known
+    known_props <- cbind(known_props, zero_mat)
+}
+
+# 3. Final Sort to ensure identical order
+common_cols <- sort(colnames(known_props), method="shell")
+known_props <- known_props[, common_cols]
+deconv_matrix <- deconv_matrix[, common_cols]
+
+# Optional: Remapping logic
 if (!is.null(par$remap)){
   conversion <- read.table(par$remap, sep="\t") %>% setNames(c("old_annot", "new_annot"))
-  if (!all(colnames(deconv_matrix) %in% conversion$old_annot)){
-    missing <- colnames(deconv_matrix)[which(!colnames(deconv_matrix) %in% conversion$old_annot)]
-    stop("Missing cell types in ", par$remap, ": ", paste(missing, collapse=", "))
-  }
+  # Check if all conversion columns exist
+  present_cols <- colnames(deconv_matrix)
   
+  # Only run mapping if columns are present
   deconv_matrix <- sapply(unique(conversion$new_annot), function(new_celltype){
-                   rowSums(deconv_matrix[,conversion$old_annot[conversion$new_annot == new_celltype],
-                        drop=FALSE])})
+                   old_cols <- conversion$old_annot[conversion$new_annot == new_celltype]
+                   old_cols <- old_cols[old_cols %in% present_cols]
+                   if(length(old_cols) == 0) return(rep(0, nrow(deconv_matrix)))
+                   if(length(old_cols) == 1) return(deconv_matrix[,old_cols])
+                   rowSums(deconv_matrix[,old_cols, drop=FALSE])
+                   })
+                   
   known_props <- sapply(unique(conversion$new_annot), function(new_celltype){
-                   rowSums(known_props[,conversion$old_annot[conversion$new_annot == new_celltype],
-                        drop=FALSE])})
+                   old_cols <- conversion$old_annot[conversion$new_annot == new_celltype]
+                   old_cols <- old_cols[old_cols %in% present_cols]
+                   if(length(old_cols) == 0) return(rep(0, nrow(known_props)))
+                   if(length(old_cols) == 1) return(known_props[,old_cols])
+                   rowSums(known_props[,old_cols, drop=FALSE])
+                   })
 }
+
 ncells <- ncol(deconv_matrix)
 
+# --- 4. Calculate Metrics ---
+
 # Correlation and RMSE
-corr_spots <- mean(diag(cor(t(known_props), t(deconv_matrix))))
-RMSE <- mean(sqrt(rowSums((known_props-deconv_matrix)**2)/ncells))
-# reference_RMSE <- mean(sqrt(rowSums((known_props-(1/ncells))**2)/ncells))
+# Ensure both are numeric matrices
+known_props <- as.matrix(known_props)
+deconv_matrix <- as.matrix(deconv_matrix)
+
+corr_spots <- mean(diag(cor(t(known_props), t(deconv_matrix))), na.rm=TRUE)
+RMSE <- mean(sqrt(rowSums((known_props-deconv_matrix)**2)/ncells), na.rm=TRUE)
 
 # Classification metrics
 conf_mat <- getConfusionMatrix(known_props, deconv_matrix)
@@ -88,13 +146,16 @@ F2 <- round((5 * precision * sensitivity) / (4*precision + sensitivity), 3)
 known_props_binary <- ifelse(known_props > 0, "present", "absent") %>%
                       reshape2::melt() %>% dplyr::select(value)
 
-# Classification metrics based on normalized rank
-# eval_basic <- evalmod(scores = c(as.matrix(deconv_matrix)), labels=known_props_binary, mode="basic")
-
 # Area under precision-recall curve
-eval_prc <- evalmod(scores = c(as.matrix(deconv_matrix)), labels=known_props_binary)
-prc <- subset(auc(eval_prc), curvetypes == "PRC")$aucs
-roc <- subset(auc(eval_prc), curvetypes == "ROC")$aucs
+# Wrap in tryCatch as evalmod can fail on edge cases (e.g. all zeros)
+tryCatch({
+    eval_prc <- evalmod(scores = c(as.matrix(deconv_matrix)), labels=known_props_binary)
+    prc <- subset(auc(eval_prc), curvetypes == "PRC")$aucs
+    roc <- subset(auc(eval_prc), curvetypes == "ROC")$aucs
+}, error = function(e) {
+    prc <<- NA
+    roc <<- NA
+})
 
 # Jensen-shannon divergence
 jsd <- suppressMessages(

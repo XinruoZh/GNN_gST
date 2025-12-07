@@ -2,87 +2,100 @@
 Sys.setenv(RETICULATE_MINICONDA_ENABLED = "FALSE")
 library(SeuratDisk)
 library(Seurat)
+library(tools)
 
-par <- list(
-  output_file_ext = ""
-)
-
+par <- list(output_file_ext = "")
 args <- R.utils::commandArgs(trailingOnly=TRUE, asValues=TRUE)
 par[names(args)] <- args
 
-file_name <- stringr::str_split(basename(par$input_path), "\\.")[[1]][1]
-ext <- stringr::str_split(basename(par$input_path), "\\.")[[1]][2]
+file_name <- tools::file_path_sans_ext(basename(par$input_path))
+ext <- tools::file_ext(par$input_path)
 
-# Convert RDS to H5AD
 if (tolower(ext) == "rds"){
-  cat("Input file is rds, will convert to h5ad...\n")
-  cat("Reading input ", par$input_path, "\n")
+  cat(paste0(">>> Processing: ", par$input_path, "\n"))
   input_obj <- readRDS(par$input_path)
   
-  # Synthspot object
-  if (class(input_obj) != "Seurat"){
-    seurat_obj <- CreateSeuratObject(counts = input_obj$counts)
+  if (!inherits(input_obj, "Seurat")){
+    
+    # 1. Extract Counts
+    counts <- NULL
+    if ("counts" %in% names(input_obj)) counts <- input_obj$counts
+    else if ("raw_counts" %in% names(input_obj)) counts <- input_obj$raw_counts
+    
+    if (is.null(counts)) stop("CRITICAL ERROR: No 'counts' found in list.")
+    
+    seurat_obj <- CreateSeuratObject(counts = counts)
+    
+    # 2. Extract Coordinates
+    coords <- NULL
+    possible_names <- c("coordinates", "spatial", "locs", "locations", "centroids", "offsets")
+    
+    for (name in possible_names) {
+        if (name %in% names(input_obj)) {
+            cat(paste0(">>> Found coordinates in slot: '", name, "'\n"))
+            coords <- as.data.frame(input_obj[[name]])
+            break
+        }
+    }
+    
+    # --- FALLBACK: Generate Grid if Missing ---
+    if (is.null(coords)) {
+        cat("WARNING: No spatial coordinates found in file. Generating synthetic grid...\n")
+        
+        n_spots <- ncol(seurat_obj)
+        # Calculate grid dimensions (approx square)
+        rows <- ceiling(sqrt(n_spots))
+        cols <- ceiling(n_spots / rows)
+        
+        # Generate x, y coordinates
+        x <- rep(1:cols, times = rows)[1:n_spots]
+        y <- rep(1:rows, each = cols)[1:n_spots]
+        
+        coords <- data.frame(x = x, y = y)
+        rownames(coords) <- colnames(seurat_obj)
+        cat(paste0(">>> Created dummy grid: ", rows, "x", cols, "\n"))
+    }
+    
+    # Standardize Column Names (ensure x, y)
+    colnames(coords) <- tolower(colnames(coords))
+    if (!all(c("x", "y") %in% colnames(coords))) {
+         if (ncol(coords) >= 2 && is.numeric(coords[,1]) && is.numeric(coords[,2])) {
+             colnames(coords)[1:2] <- c("x", "y")
+         }
+    }
+
+    # Add Metadata
+    if (nrow(coords) == ncol(seurat_obj)) {
+        seurat_obj <- AddMetaData(seurat_obj, metadata = coords)
+        cat(">>> Success: Coordinates added to metadata.\n")
+    } else {
+        stop("CRITICAL ERROR: Coordinate dimensions do not match count matrix.")
+    }
+
+    # Add generic metadata
+    if ("meta.data" %in% names(input_obj)) {
+         seurat_obj <- AddMetaData(seurat_obj, metadata = as.data.frame(input_obj$meta.data))
+    }
+
   } else {
     seurat_obj <- input_obj
   }
-  rm(input_obj)
   
-  # Use raw counts
+  rm(input_obj)
   DefaultAssay(seurat_obj) <- names(seurat_obj@assays)[grep("RNA|Spatial", names(seurat_obj@assays))[1]]
   
-  # SeuratDisk cannot work with a Seurat object older than v3.1.2
-  if (compareVersion(as.character(seurat_obj@version), "3.1.2") == -1){
-    print("Seurat object is too old, creating a new one...")
-    seurat_obj <- CreateSeuratObject(counts = GetAssayData(seurat_obj, slot="counts"),
-                                     assay = DefaultAssay(seurat_obj),
-                                     meta.data=seurat_obj@meta.data)
-  }
+  if (file.exists(paste0(file_name, ".h5ad"))) file.remove(paste0(file_name, ".h5ad"))
   
-  # If the object has been preprocessed before, SeuratDisk is going to place the
-  # raw counts in the .raw.X instead of .X, which wouldn't work downstream
-  # because the Python methods access .X instead of .raw.X
-  # So we check if the scale matrix exists, and if the counts and data slots are different
-  if (!isTRUE(all.equal(GetAssayData(seurat_obj, slot="counts"), GetAssayData(seurat_obj, slot="data"))) ||
-      all(dim(GetAssayData(seurat_obj, slot="scale.data")) > 0)){
-    cat("The Seurat object has been preprocessed. Creating a new object...")
-    seurat_obj <- CreateSeuratObject(counts = GetAssayData(seurat_obj, slot="counts"),
-                                     assay = DefaultAssay(seurat_obj),
-                                     meta.data=seurat_obj@meta.data)
-  }
-  gc()
+  cat(">>> Writing .h5Seurat...\n")
+  SaveH5Seurat(seurat_obj, filename = paste0(file_name, ".h5seurat"), overwrite = TRUE)
   
-  if (file.exists(paste0(file_name, ".h5ad"))){
-    return ("h5ad file already exists")
-  }
-  
-  cat("Writing h5Seurat file...\n")
-  SaveH5Seurat(seurat_obj, filename = paste0(file_name, ".h5seurat"))
-  
-  cat("Writing", paste0(file_name, ".h5ad"), "\n")
-  Convert(paste0(file_name, ".h5seurat"), dest = "h5ad")
+  cat(">>> Converting to .h5ad...\n")
+  Convert(paste0(file_name, ".h5seurat"), dest = "h5ad", overwrite = TRUE)
   file.remove(paste0(file_name, ".h5seurat"))
 
-# Convert H5AD to RDS
 } else if (tolower(ext) == "h5ad"){
-  cat("Input file is h5ad, will convert to rds...\n")
-  dirname(Sys.readlink(par$input_path))
-  print(par$input_path)
-  cat("Writing h5Seurat file...\n")
-  
-  # h5seurat is saved at original directory (follow symlink)
-  h5seurat_path <- file.path(dirname(Sys.readlink(par$input_path)),
-                             paste0(file_name, ".h5seurat")) 
-
-  if (file.exists(h5seurat_path)){
-    cat("h5seurat file already exists, using the existing one...\n")
-  } else {
-    Convert(par$input_path, dest = "h5seurat")
-  }
-
-  cat("Writing", paste0(file_name, par$output_file_ext, ".rds"), "\n")
-  h5seurat_file <- LoadH5Seurat(h5seurat_path)
-  saveRDS(h5seurat_file, paste0(file_name, par$output_file_ext, ".rds"))
+  h5seurat_path <- file.path(dirname(Sys.readlink(par$input_path)), paste0(file_name, ".h5seurat")) 
+  if (!file.exists(h5seurat_path)) Convert(par$input_path, dest = "h5seurat")
+  saveRDS(LoadH5Seurat(h5seurat_path), paste0(file_name, par$output_file_ext, ".rds"))
   file.remove(h5seurat_path)
 }
-
-

@@ -5,9 +5,11 @@ import numpy as np
 import scanpy as sc
 import torch
 import os
+from scipy.sparse import issparse
 
-# Import your modified GraphST
-from GraphST import GraphST
+# --- Import Fixes ---
+from GraphST.GraphST import GraphST
+from GraphST.preprocess import construct_interaction
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Run GraphST for Spotless Benchmark")
@@ -38,31 +40,85 @@ def main():
     print(f"Loading spatial data from {args.sp_input}...")
     adata_sp = sc.read_h5ad(args.sp_input)
 
+    # --- DATA FIX: Ensure 'spatial' key exists in obsm ---
+    if 'spatial' not in adata_sp.obsm:
+        print("WARNING: 'spatial' key missing in adata.obsm. Attempting to fix...")
+        found = False
+        
+        # Strategy A: Check alternative obsm keys
+        for key in ['X_spatial', 'spatial_coordinates', 'coordinates']:
+            if key in adata_sp.obsm:
+                adata_sp.obsm['spatial'] = adata_sp.obsm[key]
+                print(f" -> Found coordinates in obsm['{key}']. Copied to obsm['spatial'].")
+                found = True
+                break
+        
+        # Strategy B: Check obs columns (x/y)
+        if not found:
+            pairs = [('x', 'y'), ('X', 'Y'), ('x_centroid', 'y_centroid'), ('pxl_col_in_fullres', 'pxl_row_in_fullres')]
+            for x_col, y_col in pairs:
+                obs_lower = {k.lower(): k for k in adata_sp.obs.columns}
+                if x_col.lower() in obs_lower and y_col.lower() in obs_lower:
+                    real_x = obs_lower[x_col.lower()]
+                    real_y = obs_lower[y_col.lower()]
+                    adata_sp.obsm['spatial'] = adata_sp.obs[[real_x, real_y]].values
+                    print(f" -> Found coordinates in obs columns '{real_x}' and '{real_y}'. Created obsm['spatial'].")
+                    found = True
+                    break
+                    
+        if not found:
+             print("Available obsm keys:", list(adata_sp.obsm.keys()))
+             print("Available obs columns:", list(adata_sp.obs.columns))
+             raise KeyError("Could not locate spatial coordinates. GraphST requires adata.obsm['spatial'].")
+
     # Ensure annotation column exists
     if args.annot not in adata_sc.obs.columns:
         raise ValueError(f"Annotation column '{args.annot}' not found in single-cell data.")
 
-    # 3. Preprocessing (Standard Scanpy/GraphST checks)
-    # GraphST's built-in preprocess expects 'highly_variable' genes or raw counts.
-    # Spotless data is usually already preprocessed, but we ensure basic consistency.
+    # 3. Preprocessing (Intersection)
     adata_sc.var_names_make_unique()
     adata_sp.var_names_make_unique()
 
-    # Intersection of genes (Crucial for GraphST)
     intersect = np.intersect1d(adata_sc.var_names, adata_sp.var_names)
     adata_sc = adata_sc[:, intersect].copy()
     adata_sp = adata_sp[:, intersect].copy()
     print(f"Data intersection: {len(intersect)} common genes.")
 
+    # --- GRAPHST MANUAL PREP ---
+    # 1. Build Adjacency Matrix (adj)
+    print("Constructing spatial interaction graph...")
+    construct_interaction(adata_sp)
+    
+    # 2. Set 'feat' (Force Full Dimensions, No PCA)
+    # We use the full expression matrix matching the intersection
+    print("Setting up feature matrices (Full Dimension)...")
+    if issparse(adata_sp.X):
+        adata_sp.obsm['feat'] = adata_sp.X.toarray()
+    else:
+        adata_sp.obsm['feat'] = adata_sp.X.copy()
+
+    # 3. Set 'feat_a' (Neighbor Aggregation)
+    # This replaces the internal get_feature() call which we skipped.
+    if 'adj' in adata_sp.obsm:
+        adj = adata_sp.obsm['adj']
+        # Calculate feat_a = adj * feat
+        if issparse(adj):
+            feat_a = adj.dot(adata_sp.obsm['feat'])
+        else:
+            feat_a = np.dot(adj, adata_sp.obsm['feat'])
+        
+        adata_sp.obsm['feat_a'] = feat_a
+    else:
+        raise KeyError("Adjacency matrix 'adj' not found after construct_interaction().")
+
     # 4. Initialize and Train GraphST
-    # We pass the 'datatype' argument to trigger your custom GAT/SGC logic
     model = GraphST(
         adata=adata_sp,
         adata_sc=adata_sc,
         device=device,
         epochs=args.epochs,
-        datatype=args.datatype, # This triggers your modified code logic
-        deconvolution=True      # Essential for mapping
+        datatype=args.datatype,
+        deconvolution=True
     )
 
     print(f"Training GraphST model (Type: {args.datatype})...")
@@ -75,37 +131,21 @@ def main():
     print(f"Training finished in {end_time - start_time:.2f} seconds.")
 
     # 5. Extract and Aggregate Results
-    # GraphST outputs a (Spot x Cell) matrix in adata.obsm['map_matrix']
-    # We need to sum these by Cell Type to get (Spot x CellType) proportions.
-    
-    map_matrix = adata_sp.obsm['map_matrix'] # Shape: (n_spots, n_cells)
-    
-    # Get cell types corresponding to the columns (cells) of map_matrix
-    # Note: GraphST aligns adata_sc internally, but usually preserves order. 
-    # To be safe, we rely on the input adata_sc observations.
+    map_matrix = adata_sp.obsm['map_matrix'] 
     sc_labels = adata_sc.obs[args.annot].values
     
-    # Create DataFrame for aggregation
-    df_map = pd.DataFrame(map_matrix, index=adata_sp.obs_names)
-    
-    # Aggregate columns by cell type
-    # We create a dummy dataframe to map cell_index -> cell_type
     print("Aggregating cell-to-spot mapping into cell type proportions...")
     unique_labels = np.unique(sc_labels)
     proportions = pd.DataFrame(index=adata_sp.obs_names, columns=unique_labels)
     
-    # Efficient summation per category
     for label in unique_labels:
-        # Find indices of cells belonging to this type
         indices = np.where(sc_labels == label)[0]
         if len(indices) > 0:
-            # Sum the probabilities for these cells
             proportions[label] = map_matrix[:, indices].sum(axis=1)
         else:
             proportions[label] = 0.0
 
     # 6. Save Output
-    # Normalize rows to sum to 1 (optional but recommended for proportions)
     proportions = proportions.div(proportions.sum(axis=1), axis=0).fillna(0)
     
     print(f"Saving results to {args.output}...")

@@ -2,7 +2,7 @@
 #SBATCH --job-name=run_gst_fixed
 #SBATCH --partition=GPU-shared
 #SBATCH --gres=gpu:v100-32:1
-#SBATCH --time=4:00:00
+#SBATCH --time=2:00:00
 #SBATCH --account=cis250160p
 #SBATCH --mem=60G
 #SBATCH --chdir=/ocean/projects/cis250160p/xzhaoa/GNN_gST/spotless-benchmark

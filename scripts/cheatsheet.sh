@@ -22,3 +22,15 @@ pairs=(
 
 sinfo -o "%20P %10G %5D %15F"
 squeue -u $USER --start
+
+
+  "gold_standard_2.rds gold_standard_2/*.rds"
+  "gold_standard_3_19celltypes.rds gold_standard_3/*.rds"
+
+  # --- SILVER STANDARDS ---
+  "silver_standard_1_brain_cortex.rds silver_standard_1-*/*.rds"
+  "silver_standard_2_cerebellum_cell.rds silver_standard_2-*/*.rds"
+  "silver_standard_3_cerebellum_nucleus.rds silver_standard_3-*/*.rds"
+  "silver_standard_4_hippocampus.rds silver_standard_4-*/*.rds"
+  "silver_standard_5_kidney.rds silver_standard_5-*/*.rds"
+  "silver_standard_6_scc_p5.rds silver_standard_6-*/*.rds"
