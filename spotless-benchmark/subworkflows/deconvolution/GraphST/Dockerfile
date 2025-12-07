@@ -1,7 +1,10 @@
 FROM python:3.8-slim
 
 # 1. Install system dependencies
-RUN apt-get update && apt-get install -y build-essential git procps
+# Install R (r-base) along with other tools
+RUN apt-get update && \
+    apt-get install -y build-essential git procps r-base && \
+    rm -rf /var/lib/apt/lists/*
 
 # 2. Install PyTorch (Specific version recommended for stability)
 # This installs PyTorch 2.0.1 with CUDA 11.8 support (common on HPCs like Bridges-2)
@@ -17,7 +20,18 @@ RUN pip install torch-scatter torch-sparse torch-cluster torch-spline-conv \
 RUN pip install torch-geometric
 
 # 5. Install GraphST dependencies
-RUN pip install scanpy==1.9.1 anndata==0.8.0 pandas numpy scipy scikit-learn matplotlib==3.6.0
+# Install exact versions requested by GraphST
+# Note: Keeping torch 2.0.1 as it satisfies >=1.8.0 and matches your PyG wheels
+RUN pip install \
+    scanpy==1.9.1 \
+    anndata==0.8.0 \
+    pandas==1.4.2 \
+    numpy==1.22.3 \
+    scipy==1.8.1 \
+    scikit-learn==1.1.1 \
+    matplotlib==3.4.2 \
+    tqdm==4.64.0 \
+    rpy2==3.4.1
 
 # 6. Add your modified GraphST code
 # This copies everything from your current folder (./) to /app/GraphST inside the container
