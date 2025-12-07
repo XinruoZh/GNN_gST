@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=run_gst_gat
+#SBATCH --job-name=run_gst_gatv2
 #SBATCH --partition=GPU-shared
 #SBATCH --gres=gpu:v100-32:1
 #SBATCH --time=0:10:00
 #SBATCH --account=cis250160p
 #SBATCH --mem=60G
 #SBATCH --chdir=/ocean/projects/cis250160p/xzhaoa/GNN_gST/spotless-benchmark
-#SBATCH --output=/ocean/projects/cis250160p/xzhaoa/GNN_gST/log/%x_%j_gat.log
-#SBATCH --error=/ocean/projects/cis250160p/xzhaoa/GNN_gST/log/%x_%j_gat.err
+#SBATCH --output=/ocean/projects/cis250160p/xzhaoa/GNN_gST/log/%x_%j_gatv2.log
+#SBATCH --error=/ocean/projects/cis250160p/xzhaoa/GNN_gST/log/%x_%j_gatv2.err
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mail-user=xinruoz@andrew.cmu.edu
 
@@ -54,7 +54,7 @@ STANDARDS="$ROOTDIR/standards"
 pair="gold_standard_1.rds gold_standard_1/*.rds"
 read -r r s <<< "$pair"
 
-echo ">>> Running GraphST (GAT) on $r with spatial $s"
+echo ">>> Running GraphST (GATv2) on $r with spatial $s"
 
 # RUN COMMAND
 # -profile singularity: Matches your working script (avoids VSC cluster config issues in 'hpc' profile)
@@ -67,9 +67,9 @@ nextflow run main.nf -resume \
     --sp_input "$STANDARDS/$s" \
     --annot celltype \
     --methods graphst_custom \
-    --graphst_model_type GAT \
+    --graphst_model_type GATv2 \
     --epochs 20 \
     --gpu \
-    -with-report log/report_graphst_gat.html \
-    -with-timeline log/timeline_graphst_gat.html \
-    -with-trace log/trace_graphst_gat.txt
+    -with-report log/report_graphst_gatv2.html \
+    -with-timeline log/timeline_graphst_gatv2.html \
+    -with-trace log/trace_graphst_gatv2.txt

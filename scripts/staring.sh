@@ -6,3 +6,15 @@ srun --partition=GPU-shared --gres=gpu:v100-32:1 --time=0:40:00 --account=cis250
 
 model = GraphST(adata, datatype='GATv2', device=device)
 ['GATv2', 'GAT', 'SGC']
+
+pairs=(
+  "gold_standard_1.rds gold_standard_1/*.rds"
+  "gold_standard_2.rds gold_standard_2/*.rds"
+  "gold_standard_3_19celltypes.rds gold_standard_3/*.rds"
+  "silver_standard_1_brain_cortex.rds silver_standard_1-*/*.rds"
+  "silver_standard_2_cerebellum.rds silver_standard_2-*/*.rds"
+  "silver_standard_3_hippocampus.rds silver_standard_3-*/*.rds"
+  "silver_standard_4_kidney.rds silver_standard_4-*/*.rds"
+  "silver_standard_5_scc_p5.rds silver_standard_5-*/*.rds"
+  "silver_standard_6_melanoma.rds silver_standard_6-*/*.rds"
+)
