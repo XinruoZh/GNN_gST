@@ -30,9 +30,9 @@ workflow runMethods {
 
     main:
         // String matching to check which method to run
-        all_methods = "music,rctd,spatialdwls,spotlight,stereoscope,cell2location,destvi,dstg,nnls,seurat,tangram,stride"
+        all_methods = "music,rctd,spatialdwls,spotlight,stereoscope,cell2location,destvi,dstg,nnls,seurat,tangram,stride,graphst_custom"
         r_methods = ["music", "rctd", "spatialdwls", "spotlight", "dstg", "nnls", "seurat"]
-        python_methods = ["stereoscope","cell2location","destvi","tangram","stride"]
+        python_methods = ["stereoscope","cell2location","destvi","tangram","stride","graphst_custom"]
 
         methods = ( params.methods.toLowerCase() ==~ /all/ ? all_methods : params.methods.toLowerCase() )
         methods_list = Arrays.asList(methods.split(','))
@@ -62,12 +62,6 @@ workflow runMethods {
             if ( methods =~ /spotlight/ ){
                 runSpotlight(pair_input_ch)
                 output_ch = output_ch.mix(runSpotlight.out)
-            }
-            
-            if ( methods =~ /graphst_custom/ ){
-                // Reuse the existing 'pair_input_ch' which already combines Spatial + SingleCell
-                runGraphST(pair_input_ch)
-                output_ch = output_ch.mix(runGraphST.out)
             }
 
             if ( methods =~ /spatialdwls/ ){
@@ -118,6 +112,21 @@ workflow runMethods {
                                     stereo_combined_ch.model)
                 formatStereoscope(fitStereoscopeModel.out) 
                 output_ch = output_ch.mix(formatStereoscope.out)
+            }
+
+            if ( methods =~ /graphst_custom/ ){
+                // Combine SC and SP data, then split them into the named inputs expected by the process
+                sc_input_conv.combine(sp_input_pair)
+                    .multiMap { sc_file, sp_h5ad, sp_rds ->
+                        sc_input: sc_file
+                        sp_input: tuple(sp_h5ad, sp_rds)
+                    }
+                    .set { graphst_inputs }
+
+                // Pass the two separate channels: 1. Spatial Tuple, 2. Single-cell File
+                runGraphST(graphst_inputs.sp_input, graphst_inputs.sc_input)
+                
+                output_ch = output_ch.mix(runGraphST.out)
             }
 
             if ( methods =~ /cell2location/ ) {
